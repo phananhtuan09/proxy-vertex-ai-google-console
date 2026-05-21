@@ -35,6 +35,12 @@ def start(
         "--log-level",
         help="Uvicorn log level: debug | info | warning | error.",
     ),
+    region: str = typer.Option(
+        "us-central1",
+        "--region",
+        envvar=["PROXY_REGION", "VERTEX_REGION"],
+        help="Vertex AI region for Veo video generation. Default: us-central1",
+    ),
 ):
     """Start the Vertex AI OpenAI-compatible proxy server."""
 
@@ -50,42 +56,37 @@ def start(
         typer.echo(typer.style("Missing PROXY_API_KEY in .env", fg=typer.colors.RED), err=True)
         raise typer.Exit(code=1)
 
+    sa_key_json = os.environ.get("GOOGLE_SA_JSON", "")
+
     sa_key = Path(SA_KEY_FILENAME)
-    if not sa_key.is_file():
+    if not sa_key_json and not sa_key.is_file():
         typer.echo(
-            typer.style(f"Service account key not found: {SA_KEY_FILENAME}", fg=typer.colors.RED),
+            typer.style(f"Service account key not found: {SA_KEY_FILENAME}. Set GOOGLE_SA_JSON env var for cloud deployments.", fg=typer.colors.RED),
             err=True,
         )
         raise typer.Exit(code=1)
 
+    # On Railway/cloud, PORT env var overrides --port; HOST defaults to 0.0.0.0
+    env_port = os.environ.get("PORT")
+    if env_port:
+        port = int(env_port)
+        host = "0.0.0.0"
+
     base_url = f"http://{host}:{port}"
-    typer.echo(
-        f"\n{typer.style('Vertex AI OpenAI Proxy', bold=True)}\n"
-        f"  Project  : {typer.style(project_id, fg=typer.colors.CYAN)}\n"
-        f"  Listening: {typer.style(base_url, fg=typer.colors.GREEN)}\n"
-    )
-    typer.echo(
-        typer.style("Configure your tool (Continue / Cline / OpenCode):", bold=True) + "\n"
-        f"\n  Base URL : {base_url}/v1"
-        f"\n  API Key  : {api_key[:4]}{'*' * (len(api_key) - 4)}\n"
-        "\n  Available models: deepseek-v3, deepseek-v3.2, kimi-k2, kimi-k2-thinking, glm-5\n"
-    )
+    typer.echo(f"Vertex AI Proxy running at {typer.style(base_url, fg=typer.colors.GREEN)}")
 
     allowed_ips = os.environ.get("ALLOWED_IPS", "")
 
     from proxy_vertex_openai.app import create_app, parse_allowed_ips
 
-    ip_networks = parse_allowed_ips(allowed_ips)
-    if ip_networks:
-        typer.echo(
-            typer.style("  IP whitelist : ", bold=True)
-            + typer.style(", ".join(str(n) for n in ip_networks), fg=typer.colors.YELLOW)
-            + "\n"
-        )
-    else:
-        typer.echo(typer.style("  IP whitelist : disabled (all IPs allowed)\n", fg=typer.colors.YELLOW))
-
-    server_app = create_app(project_id=project_id, sa_key_path=str(sa_key.resolve()), api_key=api_key, allowed_ips=allowed_ips)
+    server_app = create_app(
+        project_id=project_id,
+        sa_key_path=str(sa_key.resolve()),
+        api_key=api_key,
+        allowed_ips=allowed_ips,
+        region=region,
+        sa_key_json=sa_key_json,
+    )
     uvicorn.run(server_app, host=host, port=port, log_level=log_level)
 
 

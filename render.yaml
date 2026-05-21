@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: proxy-vertex-openai
+    runtime: python
+    buildCommand: pip install -e .
+    startCommand: proxy-vertex-openai --host 0.0.0.0
+    healthCheckPath: /health
+    envVars:
+      - key: PROJECT_ID
+        sync: false
+      - key: PROXY_API_KEY
+        sync: false
+      - key: GOOGLE_SA_JSON
+        sync: false
+      - key: PROXY_REGION
+        value: us-central1
